@@ -1,2 +1,3 @@
-# Branch_Dashboard
-Kept branch dashboard Index Page
+# GHD Dashboards - Internal use
+
+Our Day to Day Dashboards are kept in this Repo
