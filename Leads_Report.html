@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GHD Aging Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  h2 { color: darkblue; }
+  #clearBtn { margin-left: 10px; }
+  td.details-control, td.user-details-control {
+    background: url('https://www.datatables.net/examples/resources/details_open.png') no-repeat center center;
+    cursor: pointer; width: 20px;
+  }
+  tr.shown td.details-control, tr.shown td.user-details-control {
+    background: url('https://www.datatables.net/examples/resources/details_close.png') no-repeat center center;
+  }
+  table.dataTable tbody td { vertical-align: middle; }
+  #ticketTable tbody tr:hover { background-color: #f0f8ff; }
+  tfoot td { font-weight: bold; background-color: #e0e0e0; }
+</style>
+</head>
+<body>
+
+<h2>GHD Aging Dashboard</h2>
+
+<input type="file" id="upload" accept=".xlsx" />
+<button id="clearBtn">Clear</button>
+
+<h3>Lead Dashboard With Aging</h3>
+<table id="ticketTable" class="display" width="100%">
+  <thead>
+    <tr>
+      <th></th>
+      <th>Team Lead</th>
+      <th>Total Pending</th>
+      <th>&lt;1d</th>
+      <th>1-2d</th>
+      <th>2-3d</th>
+      <th>3-4d</th>
+      <th>4-5d</th>
+      <th>&gt;5d</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+  <tfoot>
+    <tr>
+      <td></td>
+      <td>Total</td>
+      <td id="totalPending">0</td>
+      <td id="total_lt1">0</td>
+      <td id="total_1_2">0</td>
+      <td id="total_2_3">0</td>
+      <td id="total_3_4">0</td>
+      <td id="total_4_5">0</td>
+      <td id="total_gt5">0</td>
+    </tr>
+  </tfoot>
+</table>
+
+<script>
+// Team list: Team Lead → SP User IDs
+const teamList = {
+  "Amulya": ["1683035","2832842","2269401","2151240","2154171","2348247","2304186","2373992","2271074","2339949","2295298","2288945","1324700","2361683","2250155","2359399","2764834","2306151","2577474","2344025","2323507","2334006","2303626","2304525","2306683","2304488","2494481","2248873","2341165","2130057","2633315","2248128","2303295","2297202","2887166","2886473","2781337","2886835","2184162"],
+  "Siva Bhushan": ["2890525","2834568","2805429","2304008","2373125","2190999","2563745","2289552","2254531","1833416","2386036","2571690","2762256","2274393","2316711","2321002","2192415","2580260","2246770","2304467","2304721","2057336","1987859","2200211","2785314","2886840","2888219"],
+  "Nisarga/Simran": ["2189377","2323074","2303239","1988020","2305035","1857611","2765059","2390496","2390678","2311626","2034388","2303702","2749975","2302479","2759909","2327515","2583011","2362313","2358101","2195673","2137737","2288965","2443376","2299437","2832773","2038332","2295867","2839914","2805435","927981","2299963","2300179","2307926","2197084","2317846","2886974","2784829","2801109","2888104","2888126"],
+  "Jayasurya L": ["2886158","2762397","2390748","2235682","2343015","2576928","2268998","2357218","2579104","2578303","2253150","2248868","2302413","2308889","2302883","2038411","2225306","2220363","2191409","2193846","2805431","2804863","2890528","2785831","2709542"],
+  "Loga": ["2403977","2769557","2760922","2303968","2296136","2346010","2293937","2577276","2536729","2348912","2347041","2302228","2305115","2304168","2304640","2057340","2193954","2306106","2348355","1381209","1833436","2204626","2891657","2830129","2305260","2305010","2302960","2303127","1992241","2062174","2352422","2250616","2151465","2886868","2886817","1053435","2887982","2888116","2888131"],
+
+  "Kartik/Paras": ["2564339","2245201","2339409","2633045","2304668","2131357","2686850","2336607","2055120","2011049","2686915","2241945","2038375","2375663","2222546","2443374","2270452","2316848","2831011","2831162","2830031","2834003","2805449","2492637","2805432","2686821","2881249","2881257","2888108","2888129","2888130","2888215","2077519","2828595"],
+
+  "Iranna": ["2886425","2890475","2294301","2385788","2223689","2270341","2287207","2633039","2306468","2248857","2303553","2034422","1845012","1845034","2250151","1999987","2267267","2038378","2229724","2148144","1524173","2686820","2304013","2249250","2805664"],
+
+  "Nagavaibhav": ["2077979","2317055","2216527","2298796","2832495","2184820","2296448","2759921","2749968","2760255","2412040","2187148","2220501","2307471","2250536","2580418","2826495","2886714","2888224"],
+
+  "Mahima Shukla": ["2762649","2337263","2302234","2832656","2268276","2388339","2306646","2313999","2308029","2038331","2686927","2888317","2888992"],
+
+  "Prasanna G M":  ["2234063","2316199","2304333","2304472","2313913","2038334","2302818","2304809","2328890","2304962","1992313","2302030","2057349","2056805","1851588","2153761","2137251","2304404","2829916","2305198","912130","2762423","2761355","2576894","2833076","2310356","2564344","2304579","1851616","2796613","2796468","2828597","2812347","2807719"],
+
+  "POOL": ["POOL"],
+
+  "Leads": ["1683035","1258332","2579008","2189377","2763326","1838528","2568061","2632940","2057908","510236","2564404","2057797","2305172","2303447","2468964","2145366","2490899","510236","1542818","2302502","2568061","2632940"]
+
+
+
+};
+
+let tableData = {};
+let dataTable;
+
+function parseExcelDate(value) {
+  if (!value) return null;
+  if (typeof value === 'number') {
+    const utc_days = value - 25569;
+    const utc_value = utc_days * 86400 * 1000;
+    return new Date(utc_value);
+  } else {
+    return new Date(value);
+  }
+}
+
+function getAgingCategory(days) {
+  if (days < 1) return "<1";
+  else if (days < 2) return "1-2";
+  else if (days < 3) return "2-3";
+  else if (days < 4) return "3-4";
+  else if (days < 5) return "4-5";
+  else return ">5";
+}
+
+function formatTeamLead(teamData) {
+  let html = '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:50px;">';
+  html += '<tr><th></th><th>Associate</th><th>Pending Tickets</th></tr>';
+
+  const associates = Object.entries(teamData.associates).sort((a,b) => b[1].count - a[1].count);
+  associates.forEach(([assocID, data]) => {
+    const name = data.name || assocID;
+    html += `<tr>
+              <td class="user-details-control"></td>
+              <td>${name}</td>
+              <td>${data.count}</td>
+             </tr>`;
+  });
+  html += '</table>';
+  return html;
+}
+
+function formatUser(userData) {
+  let html = '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:70px;">';
+  html += '<tr><th>Ticket Number</th><th>Aging In Days</th></tr>';
+
+  const now = new Date();
+  userData.tickets.forEach(ticketObj => {
+    const ticketNum = ticketObj.number;
+    const loggedDate = parseExcelDate(ticketObj.loggedDate);
+    let ageDays = 'N/A';
+    if (loggedDate && !isNaN(loggedDate)) {
+      ageDays = ((now - loggedDate)/(1000*60*60*24)).toFixed(2);
+    }
+    html += `<tr><td>${ticketNum}</td><td>${ageDays}</td></tr>`;
+  });
+
+  html += '</table>';
+  return html;
+}
+
+document.getElementById('upload').addEventListener('change', handleFile);
+document.getElementById('clearBtn').addEventListener('click', () => {
+  if (dataTable) dataTable.clear().draw();
+  document.getElementById('upload').value = "";
+  tableData = {};
+  updateTotals();
+});
+
+function handleFile(e) {
+  const file = e.target.files[0];
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const data = new Uint8Array(event.target.result);
+    const workbook = XLSX.read(data, { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json(sheet);
+
+    tableData = {};
+    const now = new Date();
+
+    json.forEach(row => {
+      const userID = row["SP Userid"];
+      const assocName = row["SP Username"];
+      const ticketNum = row["Ticket Number"];
+      const loggedDate = parseExcelDate(row["Logged Date"]);
+      if (!ticketNum) return;
+
+      // Find Team Lead
+      let teamLead = null;
+      for (const [lead, members] of Object.entries(teamList)) {
+        if (members.includes(userID)) { teamLead = lead; break; }
+      }
+      if (!teamLead) return;
+
+      if (!tableData[teamLead]) {
+        tableData[teamLead] = { total: 0, associates: {}, aging: {"<1":0,"1-2":0,"2-3":0,"3-4":0,"4-5":0,">5":0} };
+      }
+
+      tableData[teamLead].total += 1;
+
+      const ageDays = loggedDate && !isNaN(loggedDate) ? (now - loggedDate)/(1000*60*60*24) : null;
+      if (ageDays !== null) {
+        const category = getAgingCategory(ageDays);
+        tableData[teamLead].aging[category] += 1;
+      }
+
+      if (!tableData[teamLead].associates[userID]) {
+        tableData[teamLead].associates[userID] = { count: 0, tickets: [], name: assocName };
+      }
+      tableData[teamLead].associates[userID].count += 1;
+      tableData[teamLead].associates[userID].tickets.push({ number: ticketNum, loggedDate: row["Logged Date"] });
+    });
+
+    renderTable();
+    updateTotals();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderTable() {
+  if (dataTable) dataTable.destroy();
+  const tableBody = document.querySelector("#ticketTable tbody");
+  tableBody.innerHTML = "";
+
+  Object.keys(tableData).forEach(teamLead => {
+    const aging = tableData[teamLead].aging;
+    const row = `<tr>
+      <td class="details-control"></td>
+      <td>${teamLead}</td>
+      <td>${tableData[teamLead].total}</td>
+      <td>${aging["<1"]}</td>
+      <td>${aging["1-2"]}</td>
+      <td>${aging["2-3"]}</td>
+      <td>${aging["3-4"]}</td>
+      <td>${aging["4-5"]}</td>
+      <td>${aging[">5"]}</td>
+    </tr>`;
+    tableBody.innerHTML += row;
+  });
+
+  dataTable = $('#ticketTable').DataTable({ order: [[2, "desc"]], deferRender: true });
+
+  $('#ticketTable tbody').off('click', 'td.details-control').on('click', 'td.details-control', function () {
+    const tr = $(this).closest('tr');
+    const row = dataTable.row(tr);
+
+    if (row.child.isShown()) {
+      row.child.hide();
+      tr.removeClass('shown');
+    } else {
+      dataTable.rows().every(function() {
+        if (this.node() !== tr[0] && this.child.isShown()) this.child.hide();
+        $(this.node()).removeClass('shown');
+      });
+
+      row.child(formatTeamLead(tableData[row.data()[1]])).show();
+      tr.addClass('shown');
+
+      tr.next('tr').find('td.user-details-control').off('click').on('click', function () {
+        const assocRow = $(this).closest('tr');
+        const leadName = row.data()[1];
+        const userID = Object.keys(tableData[leadName].associates)
+                          .find(k => tableData[leadName].associates[k].name === assocRow.find('td:nth-child(2)').text());
+        const userData = tableData[leadName].associates[userID];
+
+        if (assocRow.hasClass('shown-user')) {
+          assocRow.next('tr').remove();
+          assocRow.removeClass('shown-user');
+        } else {
+          const ticketHtml = '<tr><td colspan="9">'+formatUser(userData)+'</td></tr>';
+          assocRow.after(ticketHtml);
+          assocRow.addClass('shown-user');
+        }
+      });
+    }
+  });
+}
+
+// Update totals row
+function updateTotals() {
+  const totals = { total:0, "<1":0,"1-2":0,"2-3":0,"3-4":0,"4-5":0,">5":0 };
+  Object.values(tableData).forEach(team => {
+    totals.total += team.total;
+    for (const key of ["<1","1-2","2-3","3-4","4-5",">5"]) {
+      totals[key] += team.aging[key];
+    }
+  });
+  document.getElementById("totalPending").innerText = totals.total;
+  document.getElementById("total_lt1").innerText = totals["<1"];
+  document.getElementById("total_1_2").innerText = totals["1-2"];
+  document.getElementById("total_2_3").innerText = totals["2-3"];
+  document.getElementById("total_3_4").innerText = totals["3-4"];
+  document.getElementById("total_4_5").innerText = totals["4-5"];
+  document.getElementById("total_gt5").innerText = totals[">5"];
+}
+</script>
+
+</body>
+</html>
