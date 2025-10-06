@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GHD Ticket Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+  <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h2 { color: darkblue; }
+    #clearBtn { margin-left: 10px; }
+    td.details-control, td.user-details-control {
+      background: url('https://www.datatables.net/examples/resources/details_open.png') no-repeat center center;
+      cursor: pointer;
+      width: 20px;
+    }
+    tr.shown td.details-control, tr.shown td.user-details-control {
+      background: url('https://www.datatables.net/examples/resources/details_close.png') no-repeat center center;
+    }
+    table.dataTable tbody td { vertical-align: middle; }
+    #ticketTable tbody tr:hover { background-color: #f0f8ff; }
+  </style>
+</head>
+<body>
+  <h2>GHD Ticket Dashboard (India)</h2>
+
+  <input type="file" id="upload" accept=".xlsx" />
+  <button id="clearBtn">Clear</button>
+
+  <h3>Branch Ticket Summary</h3>
+  <table id="ticketTable" class="display" width="100%">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Branch</th>
+        <th>Total Pending Tickets</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    let tableData = {};
+    let dataTable;
+
+    // Convert Excel serial or string date to JS Date
+    function parseExcelDate(value) {
+      if (!value) return null;
+      if (typeof value === 'number') {
+        const utc_days = value - 25569;
+        const utc_value = utc_days * 86400 * 1000;
+        return new Date(utc_value);
+      } else {
+        return new Date(value);
+      }
+    }
+
+    // Format SP Users under a branch
+    function formatBranch(branchData) {
+      let html = '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:50px;">';
+      html += '<tr><th></th><th>Associate Name</th><th>Pending Tickets</th></tr>';
+
+      const users = Object.entries(branchData.users).sort((a,b) => b[1].count - a[1].count);
+      users.forEach(([user, data]) => {
+        html += `<tr>
+                  <td class="user-details-control"></td>
+                  <td>${user}</td>
+                  <td>${data.count}</td>
+                 </tr>`;
+      });
+      html += '</table>';
+      return html;
+    }
+
+    // Format Tickets under a SP User
+    function formatUser(userData) {
+      let html = '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:70px;">';
+      html += '<tr><th>Ticket Number</th><th>Aging In Days</th></tr>';
+
+      const now = new Date();
+      userData.tickets.forEach(ticketObj => {
+        const ticketNum = ticketObj.number;
+        const loggedDate = parseExcelDate(ticketObj.loggedDate);
+        let ageDays = 'N/A';
+        if (loggedDate && !isNaN(loggedDate)) {
+          ageDays = ((now - loggedDate)/(1000*60*60*24)).toFixed(2);
+        }
+        html += `<tr><td>${ticketNum}</td><td>${ageDays}</td></tr>`;
+      });
+
+      html += '</table>';
+      return html;
+    }
+
+    document.getElementById('upload').addEventListener('change', handleFile);
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      if (dataTable) dataTable.clear().draw();
+      document.getElementById('upload').value = "";
+      tableData = {};
+    });
+
+    function handleFile(e) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
+
+        tableData = {};
+        json.forEach(row => {
+          if (row.Country === "India") {
+            const branch = row.Branch;
+            const user = row["SP Username"];
+            const ticketNum = row["Ticket Number"];
+            const loggedDate = row["Logged Date"];
+
+            if (!tableData[branch]) tableData[branch] = { total: 0, users: {} };
+            tableData[branch].total += ticketNum ? 1 : 0;
+
+            if (!tableData[branch].users[user]) {
+              tableData[branch].users[user] = { count: 0, tickets: [] };
+            }
+            tableData[branch].users[user].count += ticketNum ? 1 : 0;
+            if (ticketNum) {
+              tableData[branch].users[user].tickets.push({ number: ticketNum, loggedDate: loggedDate });
+            }
+          }
+        });
+
+        renderTable();
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function renderTable() {
+      if (dataTable) dataTable.destroy();
+      const tableBody = document.querySelector("#ticketTable tbody");
+      tableBody.innerHTML = "";
+
+      Object.keys(tableData).forEach(branch => {
+        const row = `<tr>
+          <td class="details-control"></td>
+          <td>${branch}</td>
+          <td>${tableData[branch].total}</td>
+        </tr>`;
+        tableBody.innerHTML += row;
+      });
+
+      dataTable = $('#ticketTable').DataTable({ order: [[2, "desc"]], deferRender: true });
+
+      // Branch expand/collapse
+      $('#ticketTable tbody').off('click', 'td.details-control').on('click', 'td.details-control', function () {
+        const tr = $(this).closest('tr');
+        const row = dataTable.row(tr);
+
+        if (row.child.isShown()) {
+          row.child.hide();
+          tr.removeClass('shown');
+        } else {
+          dataTable.rows().every(function() {
+            if (this.node() !== tr[0] && this.child.isShown()) this.child.hide();
+            $(this.node()).removeClass('shown');
+          });
+
+          row.child(formatBranch(tableData[row.data()[1]])).show();
+          tr.addClass('shown');
+
+          // Attach user expand/collapse once
+          tr.next('tr').find('td.user-details-control').off('click').on('click', function () {
+            const userRow = $(this).closest('tr');
+            const branchName = row.data()[1];
+            const userName = userRow.find('td:nth-child(2)').text();
+            const userData = tableData[branchName].users[userName];
+
+            if (userRow.hasClass('shown-user')) {
+              userRow.next('tr').remove();
+              userRow.removeClass('shown-user');
+            } else {
+              const ticketHtml = '<tr><td colspan="3">'+formatUser(userData)+'</td></tr>';
+              userRow.after(ticketHtml);
+              userRow.addClass('shown-user');
+            }
+          });
+        }
+      });
+    }
+  </script>
+</body>
+</html>
