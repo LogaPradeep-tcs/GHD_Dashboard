@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GHD RE Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  h2 { color: darkblue; }
+  #clearBtn { margin-left: 10px; }
+  td.details-control, td.user-details-control {
+    background: url('https://www.datatables.net/examples/resources/details_open.png') no-repeat center center;
+    cursor: pointer; width: 20px;
+  }
+  tr.shown td.details-control, tr.shown td.user-details-control {
+    background: url('https://www.datatables.net/examples/resources/details_close.png') no-repeat center center;
+  }
+  table.dataTable tbody td { vertical-align: middle; }
+  #ticketTable tbody tr:hover { background-color: #f0f8ff; }
+  tfoot td { font-weight: bold; background-color: #e0e0e0; }
+</style>
+</head>
+<body>
+
+<h2>GHD RE Dashboard</h2>
+
+<input type="file" id="upload" accept=".xlsx" />
+<button id="clearBtn">Clear</button>
+
+<h3>GHD RE Dashboard</h3>
+<table id="ticketTable" class="display" width="100%">
+  <thead>
+    <tr>
+      <th></th>
+      <th>Team Lead</th>
+      <th>Total Pending</th>
+      <th>&lt;1d</th>
+      <th>1-2d</th>
+      <th>2-3d</th>
+      <th>3-4d</th>
+      <th>4-5d</th>
+      <th>&gt;5d</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+  <tfoot>
+    <tr>
+      <td></td>
+      <td>Total</td>
+      <td id="totalPending">0</td>
+      <td id="total_lt1">0</td>
+      <td id="total_1_2">0</td>
+      <td id="total_2_3">0</td>
+      <td id="total_3_4">0</td>
+      <td id="total_4_5">0</td>
+      <td id="total_gt5">0</td>
+    </tr>
+  </tfoot>
+</table>
+
+<script>
+// Team list: Team Lead → SP User IDs
+const teamList = {
+  "Sai_Ahmd": ["1539299","2724675","2459605","2118103","2833117"],
+
+  "Sai_kerala": ["2830929","2831241","2886767","2886858","2886729","2887511","2306606","1980661"],
+
+  "Yugandhar": ["2886308","2886553","2886557","2247194","2298225","2738506","2900700","2886869","2887034","2886779","2307477","2309984","2886796"],
+
+  "Arunraj - Kolkata": ["2288511","2304570","2887518","2297048","2256612","2781931","2888409","2337855","2236318","2204614","2829074","2735202","2886045","2268766"],
+  "Arunraj - BBSR": ["2643291","1746777"],
+
+  "Kartik/Paras": ["2302045","2302084","1578746","2796996","2301552","2304248","2347286","2304989","2228651"],
+
+  "Ayyappan": ["2337152","2271727","2299765","2229075","2902279","2829770","2304407","1682813","2337720","2363897","2205877","1985206","1438261","2304006"],
+
+  "Nagavaibhav": ["2686819","2888119","2888132"],
+
+  "Prashanthi Paramesh": ["2341149","1460835","2776242","2332327","2719284","2815655","2910459","2886483","2716611","2772064"],
+
+  "Nandini": ["2756653","1996138","2723203","2722066","2829814","2248303","2307405","2886964","2833952","2305377","2306459","2239573"],
+
+  "Sugan AR": ["2349024","2327794","2885884","2283150","2289029","2304683","2722093","2722070","2305329","2305286","2900071","2301533","2303235","2303029","2076404"],
+
+  "POOL": ["POOL"],
+
+  "Sivakumar": ["2287520","2359199","2239385","2303916","2257594","2215007","2774520"],
+
+  "Leads": ["2305172","2303447","2468964","2145366","2490899","510236","1542818","2302502","2568061","2632940","2302030"]
+
+
+};
+
+let tableData = {};
+let dataTable;
+
+function parseExcelDate(value) {
+  if (!value) return null;
+  if (typeof value === 'number') {
+    const utc_days = value - 25569;
+    const utc_value = utc_days * 86400 * 1000;
+    return new Date(utc_value);
+  } else {
+    return new Date(value);
+  }
+}
+
+function getAgingCategory(days) {
+  if (days < 1) return "<1";
+  else if (days < 2) return "1-2";
+  else if (days < 3) return "2-3";
+  else if (days < 4) return "3-4";
+  else if (days < 5) return "4-5";
+  else return ">5";
+}
+
+function formatTeamLead(teamData) {
+  let html = '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:50px;">';
+  html += '<tr><th></th><th>Associate</th><th>Pending Tickets</th></tr>';
+
+  const associates = Object.entries(teamData.associates).sort((a,b) => b[1].count - a[1].count);
+  associates.forEach(([assocID, data]) => {
+    const name = data.name || assocID;
+    html += `<tr>
+              <td class="user-details-control"></td>
+              <td>${name}</td>
+              <td>${data.count}</td>
+             </tr>`;
+  });
+  html += '</table>';
+  return html;
+}
+
+function formatUser(userData) {
+  let html = '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:70px;">';
+  html += '<tr><th>Ticket Number</th><th>Aging In Days</th></tr>';
+
+  const now = new Date();
+  userData.tickets.forEach(ticketObj => {
+    const ticketNum = ticketObj.number;
+    const loggedDate = parseExcelDate(ticketObj.loggedDate);
+    let ageDays = 'N/A';
+    if (loggedDate && !isNaN(loggedDate)) {
+      ageDays = ((now - loggedDate)/(1000*60*60*24)).toFixed(2);
+    }
+    html += `<tr><td>${ticketNum}</td><td>${ageDays}</td></tr>`;
+  });
+
+  html += '</table>';
+  return html;
+}
+
+document.getElementById('upload').addEventListener('change', handleFile);
+document.getElementById('clearBtn').addEventListener('click', () => {
+  if (dataTable) dataTable.clear().draw();
+  document.getElementById('upload').value = "";
+  tableData = {};
+  updateTotals();
+});
+
+function handleFile(e) {
+  const file = e.target.files[0];
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const data = new Uint8Array(event.target.result);
+    const workbook = XLSX.read(data, { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json(sheet);
+
+    tableData = {};
+    const now = new Date();
+
+    json.forEach(row => {
+      const userID = row["SP Userid"];
+      const assocName = row["SP Username"];
+      const ticketNum = row["Ticket Number"];
+      const loggedDate = parseExcelDate(row["Logged Date"]);
+      if (!ticketNum) return;
+
+      // Find Team Lead
+      let teamLead = null;
+      for (const [lead, members] of Object.entries(teamList)) {
+        if (members.includes(userID)) { teamLead = lead; break; }
+      }
+      if (!teamLead) return;
+
+      if (!tableData[teamLead]) {
+        tableData[teamLead] = { total: 0, associates: {}, aging: {"<1":0,"1-2":0,"2-3":0,"3-4":0,"4-5":0,">5":0} };
+      }
+
+      tableData[teamLead].total += 1;
+
+      const ageDays = loggedDate && !isNaN(loggedDate) ? (now - loggedDate)/(1000*60*60*24) : null;
+      if (ageDays !== null) {
+        const category = getAgingCategory(ageDays);
+        tableData[teamLead].aging[category] += 1;
+      }
+
+      if (!tableData[teamLead].associates[userID]) {
+        tableData[teamLead].associates[userID] = { count: 0, tickets: [], name: assocName };
+      }
+      tableData[teamLead].associates[userID].count += 1;
+      tableData[teamLead].associates[userID].tickets.push({ number: ticketNum, loggedDate: row["Logged Date"] });
+    });
+
+    renderTable();
+    updateTotals();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderTable() {
+  if (dataTable) dataTable.destroy();
+  const tableBody = document.querySelector("#ticketTable tbody");
+  tableBody.innerHTML = "";
+
+  Object.keys(tableData).forEach(teamLead => {
+    const aging = tableData[teamLead].aging;
+    const row = `<tr>
+      <td class="details-control"></td>
+      <td>${teamLead}</td>
+      <td>${tableData[teamLead].total}</td>
+      <td>${aging["<1"]}</td>
+      <td>${aging["1-2"]}</td>
+      <td>${aging["2-3"]}</td>
+      <td>${aging["3-4"]}</td>
+      <td>${aging["4-5"]}</td>
+      <td>${aging[">5"]}</td>
+    </tr>`;
+    tableBody.innerHTML += row;
+  });
+
+  dataTable = $('#ticketTable').DataTable({ order: [[2, "desc"]], deferRender: true });
+
+  $('#ticketTable tbody').off('click', 'td.details-control').on('click', 'td.details-control', function () {
+    const tr = $(this).closest('tr');
+    const row = dataTable.row(tr);
+
+    if (row.child.isShown()) {
+      row.child.hide();
+      tr.removeClass('shown');
+    } else {
+      dataTable.rows().every(function() {
+        if (this.node() !== tr[0] && this.child.isShown()) this.child.hide();
+        $(this.node()).removeClass('shown');
+      });
+
+      row.child(formatTeamLead(tableData[row.data()[1]])).show();
+      tr.addClass('shown');
+
+      tr.next('tr').find('td.user-details-control').off('click').on('click', function () {
+        const assocRow = $(this).closest('tr');
+        const leadName = row.data()[1];
+        const userID = Object.keys(tableData[leadName].associates)
+                          .find(k => tableData[leadName].associates[k].name === assocRow.find('td:nth-child(2)').text());
+        const userData = tableData[leadName].associates[userID];
+
+        if (assocRow.hasClass('shown-user')) {
+          assocRow.next('tr').remove();
+          assocRow.removeClass('shown-user');
+        } else {
+          const ticketHtml = '<tr><td colspan="9">'+formatUser(userData)+'</td></tr>';
+          assocRow.after(ticketHtml);
+          assocRow.addClass('shown-user');
+        }
+      });
+    }
+  });
+}
+
+// Update totals row
+function updateTotals() {
+  const totals = { total:0, "<1":0,"1-2":0,"2-3":0,"3-4":0,"4-5":0,">5":0 };
+  Object.values(tableData).forEach(team => {
+    totals.total += team.total;
+    for (const key of ["<1","1-2","2-3","3-4","4-5",">5"]) {
+      totals[key] += team.aging[key];
+    }
+  });
+  document.getElementById("totalPending").innerText = totals.total;
+  document.getElementById("total_lt1").innerText = totals["<1"];
+  document.getElementById("total_1_2").innerText = totals["1-2"];
+  document.getElementById("total_2_3").innerText = totals["2-3"];
+  document.getElementById("total_3_4").innerText = totals["3-4"];
+  document.getElementById("total_4_5").innerText = totals["4-5"];
+  document.getElementById("total_gt5").innerText = totals[">5"];
+}
+</script>
+
+</body>
+</html>
