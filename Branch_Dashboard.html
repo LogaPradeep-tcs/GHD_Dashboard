@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>GHD Ticket Dashboard</title>
+  <title>GHD Ticket Dashboard (India)</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
@@ -10,17 +10,36 @@
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
     h2 { color: darkblue; }
-    #clearBtn { margin-left: 10px; }
-    td.details-control, td.user-details-control {
+    #clearBtn, #copyAllBtn { margin-left: 10px; }
+    td.details-control {
       background: url('https://www.datatables.net/examples/resources/details_open.png') no-repeat center center;
       cursor: pointer;
       width: 20px;
     }
-    tr.shown td.details-control, tr.shown td.user-details-control {
+    tr.shown td.details-control {
+      background: url('https://www.datatables.net/examples/resources/details_close.png') no-repeat center center;
+    }
+    td.user-details-control {
+      background: url('https://www.datatables.net/examples/resources/details_open.png') no-repeat center center;
+      cursor: pointer;
+      width: 20px;
+    }
+    tr.shown-user td.user-details-control {
       background: url('https://www.datatables.net/examples/resources/details_close.png') no-repeat center center;
     }
     table.dataTable tbody td { vertical-align: middle; }
     #ticketTable tbody tr:hover { background-color: #f0f8ff; }
+    .copy-btn {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      padding: 4px 10px;
+      cursor: pointer;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .copy-btn:hover { background-color: #0056b3; }
   </style>
 </head>
 <body>
@@ -28,6 +47,7 @@
 
   <input type="file" id="upload" accept=".xlsx" />
   <button id="clearBtn">Clear</button>
+  <button id="copyAllBtn" style="display:none;">Copy All Data</button>
 
   <h3>Branch Ticket Summary</h3>
   <table id="ticketTable" class="display" width="100%">
@@ -36,6 +56,7 @@
         <th></th>
         <th>Branch</th>
         <th>Total Pending Tickets</th>
+        <th style="display:none">Users</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -44,8 +65,8 @@
   <script>
     let tableData = {};
     let dataTable;
+    let expandedBranchRow = null;
 
-    // Convert Excel serial or string date to JS Date
     function parseExcelDate(value) {
       if (!value) return null;
       if (typeof value === 'number') {
@@ -57,9 +78,9 @@
       }
     }
 
-    // Format SP Users under a branch
-    function formatBranch(branchData) {
-      let html = '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:50px;">';
+    function formatBranch(branchData, branchName) {
+      let html = `<button class="copy-btn" onclick="copyBranchData('${branchName}')">Copy Branch Data</button>`;
+      html += '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:50px;">';
       html += '<tr><th></th><th>Associate Name</th><th>Pending Tickets</th></tr>';
 
       const users = Object.entries(branchData.users).sort((a,b) => b[1].count - a[1].count);
@@ -74,10 +95,10 @@
       return html;
     }
 
-    // Format Tickets under a SP User
-    function formatUser(userData) {
-      let html = '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:70px;">';
-      html += '<tr><th>Ticket Number</th><th>Aging In Days</th></tr>';
+    function formatUser(userData, userName) {
+      let html = `<button class="copy-btn" onclick="copyUserData('${userName.replace(/'/g, "\\'")}')">Copy User Data</button>`;
+      html += '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:70px;">';
+      html += '<tr><th>Ticket Number</th><th>Aging Days</th></tr>';
 
       const now = new Date();
       userData.tickets.forEach(ticketObj => {
@@ -95,10 +116,16 @@
     }
 
     document.getElementById('upload').addEventListener('change', handleFile);
-    document.getElementById('clearBtn').addEventListener('click', () => {
-      if (dataTable) dataTable.clear().draw();
-      document.getElementById('upload').value = "";
-      tableData = {};
+    document.getElementById('clearBtn').addEventListener('click', () => location.reload());
+
+    document.getElementById('copyAllBtn').addEventListener('click', () => {
+      const rows = $('#ticketTable').DataTable().rows({ search: 'applied' }).data();
+      let text = "Branch\tTotal Pending Tickets\n";
+      for (let i = 0; i < rows.length; i++) {
+        text += `${rows[i][1]}\t${rows[i][2]}\n`;
+      }
+      navigator.clipboard.writeText(text);
+      alert("Branch data copied!");
     });
 
     function handleFile(e) {
@@ -131,6 +158,7 @@
           }
         });
 
+        document.getElementById('copyAllBtn').style.display = "inline-block";
         renderTable();
       };
       reader.readAsArrayBuffer(file);
@@ -142,51 +170,114 @@
       tableBody.innerHTML = "";
 
       Object.keys(tableData).forEach(branch => {
+        const hiddenUsers = Object.keys(tableData[branch].users).join('|');
         const row = `<tr>
           <td class="details-control"></td>
           <td>${branch}</td>
           <td>${tableData[branch].total}</td>
+          <td style="display:none">${hiddenUsers}</td>
         </tr>`;
         tableBody.innerHTML += row;
       });
 
-      dataTable = $('#ticketTable').DataTable({ order: [[2, "desc"]], deferRender: true });
+      dataTable = $('#ticketTable').DataTable({ 
+        order: [[2, "desc"]], 
+        deferRender: true,
+        paging: false,
+        info: false,
+        searching: true
+      });
+
+      // Global search including hidden user names
+      $.fn.dataTable.ext.search.push(function(settings, data, dataIndex) {
+        const searchTerm = $('.dataTables_filter input').val().toLowerCase();
+        if (!searchTerm) return true;
+
+        const branchName = data[1].toLowerCase();
+        const users = data[3].toLowerCase(); // hidden user list
+        return branchName.includes(searchTerm) || users.includes(searchTerm);
+      });
+
+      $('#ticketTable_filter input').off('keyup').on('keyup', function() {
+        dataTable.draw();
+      });
 
       // Branch expand/collapse
       $('#ticketTable tbody').off('click', 'td.details-control').on('click', 'td.details-control', function () {
         const tr = $(this).closest('tr');
         const row = dataTable.row(tr);
+        const branchName = row.data()[1];
 
         if (row.child.isShown()) {
           row.child.hide();
           tr.removeClass('shown');
-        } else {
-          dataTable.rows().every(function() {
-            if (this.node() !== tr[0] && this.child.isShown()) this.child.hide();
-            $(this.node()).removeClass('shown');
-          });
+          expandedBranchRow = null;
+          return;
+        }
 
-          row.child(formatBranch(tableData[row.data()[1]])).show();
-          tr.addClass('shown');
+        if (expandedBranchRow && expandedBranchRow[0] !== tr[0]) {
+          expandedBranchRow.child.hide();
+          expandedBranchRow.nodes().to$().removeClass('shown');
+        }
 
-          // Attach user expand/collapse once
-          tr.next('tr').find('td.user-details-control').off('click').on('click', function () {
-            const userRow = $(this).closest('tr');
-            const branchName = row.data()[1];
-            const userName = userRow.find('td:nth-child(2)').text();
-            const userData = tableData[branchName].users[userName];
+        row.child(formatBranch(tableData[branchName], branchName)).show();
+        tr.addClass('shown');
+        expandedBranchRow = row;
 
-            if (userRow.hasClass('shown-user')) {
-              userRow.next('tr').remove();
-              userRow.removeClass('shown-user');
-            } else {
-              const ticketHtml = '<tr><td colspan="3">'+formatUser(userData)+'</td></tr>';
-              userRow.after(ticketHtml);
-              userRow.addClass('shown-user');
+        // User expand/collapse
+        tr.next('tr').find('td.user-details-control').off('click').on('click', function () {
+          const userRow = $(this).closest('tr');
+
+          $('#ticketTable tbody tr.shown-user').each(function() {
+            if ($(this)[0] !== userRow[0]) {
+              $(this).next('tr').remove();
+              $(this).removeClass('shown-user');
             }
           });
-        }
+
+          const userName = userRow.find('td:nth-child(2)').text();
+          const userData = tableData[branchName].users[userName];
+
+          if (userRow.hasClass('shown-user')) {
+            userRow.next('tr').remove();
+            userRow.removeClass('shown-user');
+          } else {
+            const ticketHtml = '<tr><td colspan="3">'+formatUser(userData, userName)+'</td></tr>';
+            userRow.after(ticketHtml);
+            userRow.addClass('shown-user');
+          }
+        });
       });
+    }
+
+    function copyBranchData(branchName) {
+      let text = `Branch: ${branchName}\nAssociate Name\tPending Tickets\n`;
+      const users = Object.entries(tableData[branchName].users).sort((a,b) => b[1].count - a[1].count);
+      users.forEach(([user, data]) => {
+        text += `${user}\t${data.count}\n`;
+      });
+      navigator.clipboard.writeText(text);
+      alert(`Branch "${branchName}" data copied!`);
+    }
+
+    function copyUserData(userName) {
+      for (const branch in tableData) {
+        if (tableData[branch].users[userName]) {
+          let text = `User: ${userName}\nTicket Number\tAging in days\n`;
+          const now = new Date();
+          tableData[branch].users[userName].tickets.forEach(ticket => {
+            const loggedDate = parseExcelDate(ticket.loggedDate);
+            let ageDays = 'N/A';
+            if (loggedDate && !isNaN(loggedDate)) {
+              ageDays = ((now - loggedDate)/(1000*60*60*24)).toFixed(2);
+            }
+            text += `${ticket.number}\t${ageDays}\n`;
+          });
+          navigator.clipboard.writeText(text);
+          alert(`Tickets for ${userName} copied!`);
+          break;
+        }
+      }
     }
   </script>
 </body>
