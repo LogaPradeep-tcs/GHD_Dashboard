@@ -98,14 +98,38 @@ let tableData = {};
 let dataTable;
 
 function parseExcelDate(value) {
-  if (!value) return null;
-  if (typeof value === 'number') {
-    const utc_days = value - 25569;
-    const utc_value = utc_days * 86400 * 1000;
-    return new Date(utc_value);
-  } else {
-    return new Date(value);
-  }
+ if (!value) return null;
+ // Case 1: Excel numeric date (as before)
+ if (typeof value === 'number') {
+   const utc_days = value - 25569;
+   const utc_value = utc_days * 86400 * 1000;
+   return new Date(utc_value);
+ }
+ // Case 2: String formats like "03 November 2025, 10.47AM"
+ if (typeof value === 'string') {
+   // Convert "03 November 2025, 10.47AM" → "03 November 2025 10:47 AM"
+   let formatted = value
+     .replace(',', '')               // remove comma
+     .replace(/(\d+)\.(\d+)(AM|PM)/i, '$1:$2 $3'); // change dot to colon
+   // Parse manually since Date.parse may fail on localized month names
+   const match = formatted.match(
+     /(\d{1,2}) (\w+) (\d{4}) (\d{1,2}):(\d{2}) ?(AM|PM)/i
+   );
+   if (match) {
+     const [_, day, monthStr, year, hourStr, minStr, ampm] = match;
+     const months = {
+       January: 0, February: 1, March: 2, April: 3, May: 4, June: 5,
+       July: 6, August: 7, September: 8, October: 9, November: 10, December: 11
+     };
+     let hour = parseInt(hourStr, 10);
+     const minute = parseInt(minStr, 10);
+     if (ampm.toUpperCase() === "PM" && hour < 12) hour += 12;
+     if (ampm.toUpperCase() === "AM" && hour === 12) hour = 0;
+     const month = months[monthStr];
+     return new Date(year, month, parseInt(day, 10), hour, minute);
+   }
+ }
+ return new Date(value);
 }
 
 function getAgingCategory(days) {
@@ -292,4 +316,5 @@ function updateTotals() {
 
 </body>
 </html>
+
 
