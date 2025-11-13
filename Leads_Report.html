@@ -10,7 +10,7 @@
 <style>
   body { font-family: Arial, sans-serif; margin: 20px; }
   h2 { color: darkblue; }
-  #clearBtn { margin-left: 10px; }
+  #clearBtn, #copyAllBtn { margin-left: 10px; }
   td.details-control, td.user-details-control {
     background: url('https://www.datatables.net/examples/resources/details_open.png') no-repeat center center;
     cursor: pointer; width: 20px;
@@ -21,6 +21,25 @@
   table.dataTable tbody td { vertical-align: middle; }
   #ticketTable tbody tr:hover { background-color: #f0f8ff; }
   tfoot td { font-weight: bold; background-color: #e0e0e0; }
+  .copy-btn {
+    background-color: #007bff; color: white; border: none;
+    padding: 5px 10px; border-radius: 5px; cursor: pointer;
+    margin-bottom: 5px;
+  }
+  .copy-btn:hover { background-color: #0056b3; }
+  #popup {
+    display: none; position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: white; border: 1px solid #ccc; padding: 20px;
+    z-index: 9999; box-shadow: 0 0 15px rgba(0,0,0,0.3);
+    max-height: 70vh; overflow-y: auto; width: 60%;
+  }
+  #popup button { margin-top: 10px; }
+  #overlay {
+    display: none; position: fixed; top: 0; left: 0;
+    width: 100%; height: 100%; background: rgba(0,0,0,0.5);
+    z-index: 9998;
+  }
 </style>
 </head>
 <body>
@@ -28,6 +47,7 @@
 <h2>GHD Aging Dashboard</h2>
 
 <input type="file" id="upload" accept=".xlsx" />
+<button id="copyAllBtn" style="display:none;">Copy All</button>
 <button id="clearBtn">Clear</button>
 
 <h3>Lead Dashboard With Aging</h3>
@@ -61,14 +81,20 @@
   </tfoot>
 </table>
 
+<div id="overlay"></div>
+<div id="popup">
+  <div id="popup-content"></div>
+  <button id="copyPopupBtn" class="copy-btn">Copy</button>
+  <button id="closePopupBtn" class="copy-btn" style="background-color:gray;">Close</button>
+</div>
+
 <script>
-// Team list: Team Lead → SP User IDs
 const teamList = {
   "Amulya": ["1683035","2832842","2269401","2151240","2154171","2348247","2304186","2373992","2271074","2339949","2295298","2288945","1324700","2361683","2250155","2359399","2764834","2306151","2577474","2344025","2323507","2334006","2303626","2304525","2306683","2304488","2494481","2248873","2341165","2130057","2633315","2248128","2303295","2297202","2887166","2886473","2781337","2886835","2184162"],
   "Siva Bhushan": ["2890525","2834568","2805429","2304008","2373125","2190999","2563745","2289552","2254531","1833416","2386036","2571690","2762256","2274393","2316711","2321002","2192415","2580260","2246770","2304467","2304721","2057336","1987859","2200211","2785314","2886840","2888219"],
   "Nisarga/Simran": ["2189377","2323074","2303239","1988020","2305035","1857611","2765059","2390496","2390678","2311626","2034388","2303702","2749975","2302479","2759909","2327515","2583011","2362313","2358101","2195673","2137737","2288965","2443376","2299437","2832773","2038332","2295867","2839914","2805435","927981","2299963","2300179","2307926","2197084","2317846","2886974","2784829","2801109","2888104","2888126"],
   "Jayasurya L": ["2886158","2762397","2390748","2235682","2343015","2576928","2268998","2357218","2579104","2578303","2253150","2248868","2302413","2308889","2302883","2038411","2225306","2220363","2191409","2193846","2805431","2804863","2890528","2785831","2709542"],
-  "Loga": ["2403977","2769557","2760922","2303968","2296136","2346010","2293937","2577276","2536729","2348912","2347041","2302228","2305115","2304168","2304640","2057340","2193954","2306106","2348355","1381209","1833436","2204626","2891657","2830129","2305260","2305010","2302960","2303127","1992241","2062174","2352422","2250616","2151465","2886868","2886817","1053435","2887982","2888116","2888131"],
+  "Loga": ["2403977","2769557","2760922","2303968","2296136","2346010","2293937","2577276","2536729","2348912","2347041","2302228","2305115","2304168","2304640","2057340","2306106","2348355","1381209","1833436","2204626","2891657","2830129","2305260","2305010","2302960","2303127","1992241","2062174","2352422","2250616","2151465","2886817","1053435","2887982","2888116","2888131","2931049","2934054"],
 
   "Kartik/Paras": ["2564339","2245201","2339409","2633045","2304668","2131357","2686850","2336607","2055120","2011049","2686915","2241945","2038375","2375663","2222546","2443374","2270452","2316848","2831011","2831162","2830031","2834003","2805449","2492637","2805432","2686821","2881249","2881257","2888108","2888129","2888130","2888215","2077519","2828595"],
 
@@ -83,9 +109,6 @@ const teamList = {
   "POOL": ["POOL"],
 
   "Leads": ["1683035","1258332","2579008","2189377","2763326","1838528","2568061","2632940","2057908","510236","2564404","2057797","2305172","2303447","2468964","2145366","2490899","510236","1542818","2302502","2568061","2632940"]
-
-
-
 };
 
 let tableData = {};
@@ -135,49 +158,44 @@ function getAgingCategory(days) {
   else return ">5";
 }
 
-function formatTeamLead(teamData) {
-  let html = '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:50px;">';
+function formatTeamLead(teamData, leadName) {
+  let html = `<button class='copy-btn' onclick="copySection(this)">Copy ${leadName} Details</button>`;
+  html += '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:50px;">';
   html += '<tr><th></th><th>Associate</th><th>Pending Tickets</th></tr>';
-
-  const associates = Object.entries(teamData.associates).sort((a,b) => b[1].count - a[1].count);
-  associates.forEach(([assocID, data]) => {
+  const associates = Object.entries(teamData.associates).sort((a,b)=>b[1].count-a[1].count);
+  associates.forEach(([assocID, data])=>{
     const name = data.name || assocID;
     html += `<tr>
-              <td class="user-details-control"></td>
-              <td>${name}</td>
-              <td>${data.count}</td>
-             </tr>`;
+      <td class="user-details-control"></td>
+      <td>${name}</td>
+      <td>${data.count}</td>
+    </tr>`;
   });
   html += '</table>';
   return html;
 }
 
-function formatUser(userData) {
-  let html = '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:70px;">';
-  html += '<tr><th>Ticket Number</th><th>Aging In Days</th></tr>';
-
+function formatUser(userData, assocName) {
+  let html = `<button class='copy-btn' onclick="copySection(this)">Copy ${assocName} Tickets</button>`;
+  html += '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:70px;">';
+  html += '<tr><th>Ticket Number</th><th>Age (days)</th></tr>';
   const now = new Date();
-  userData.tickets.forEach(ticketObj => {
-    const ticketNum = ticketObj.number;
+  userData.tickets.forEach(ticketObj=>{
     const loggedDate = parseExcelDate(ticketObj.loggedDate);
     let ageDays = 'N/A';
-    if (loggedDate && !isNaN(loggedDate)) {
+    if (loggedDate && !isNaN(loggedDate))
       ageDays = ((now - loggedDate)/(1000*60*60*24)).toFixed(2);
-    }
-    html += `<tr><td>${ticketNum}</td><td>${ageDays}</td></tr>`;
+    html += `<tr><td>${ticketObj.number}</td><td>${ageDays}</td></tr>`;
   });
-
   html += '</table>';
   return html;
 }
 
 document.getElementById('upload').addEventListener('change', handleFile);
-document.getElementById('clearBtn').addEventListener('click', () => {
-  if (dataTable) dataTable.clear().draw();
-  document.getElementById('upload').value = "";
-  tableData = {};
-  updateTotals();
-});
+document.getElementById('clearBtn').addEventListener('click', () => location.reload());
+document.getElementById('copyAllBtn').addEventListener('click', () => copyFullTable());
+document.getElementById('closePopupBtn').addEventListener('click', closePopup);
+document.getElementById('copyPopupBtn').addEventListener('click', copyPopupContent);
 
 function handleFile(e) {
   const file = e.target.files[0];
@@ -187,7 +205,6 @@ function handleFile(e) {
     const workbook = XLSX.read(data, { type: 'array' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const json = XLSX.utils.sheet_to_json(sheet);
-
     tableData = {};
     const now = new Date();
 
@@ -197,117 +214,145 @@ function handleFile(e) {
       const ticketNum = row["Ticket Number"];
       const loggedDate = parseExcelDate(row["Logged Date"]);
       if (!ticketNum) return;
-
-      // Find Team Lead
       let teamLead = null;
-      for (const [lead, members] of Object.entries(teamList)) {
+      for (const [lead, members] of Object.entries(teamList))
         if (members.includes(userID)) { teamLead = lead; break; }
-      }
       if (!teamLead) return;
 
-      if (!tableData[teamLead]) {
-        tableData[teamLead] = { total: 0, associates: {}, aging: {"<1":0,"1-2":0,"2-3":0,"3-4":0,"4-5":0,">5":0} };
+      if (!tableData[teamLead])
+        tableData[teamLead] = { total:0, associates:{}, aging:{"<1":0,"1-2":0,"2-3":0,"3-4":0,"4-5":0,">5":0} };
+
+      tableData[teamLead].total++;
+      const ageDays = loggedDate && !isNaN(loggedDate)?(now-loggedDate)/(1000*60*60*24):null;
+      if (ageDays!==null){
+        const cat=getAgingCategory(ageDays);
+        tableData[teamLead].aging[cat]++;
       }
 
-      tableData[teamLead].total += 1;
-
-      const ageDays = loggedDate && !isNaN(loggedDate) ? (now - loggedDate)/(1000*60*60*24) : null;
-      if (ageDays !== null) {
-        const category = getAgingCategory(ageDays);
-        tableData[teamLead].aging[category] += 1;
-      }
-
-      if (!tableData[teamLead].associates[userID]) {
-        tableData[teamLead].associates[userID] = { count: 0, tickets: [], name: assocName };
-      }
-      tableData[teamLead].associates[userID].count += 1;
-      tableData[teamLead].associates[userID].tickets.push({ number: ticketNum, loggedDate: row["Logged Date"] });
+      if (!tableData[teamLead].associates[userID])
+        tableData[teamLead].associates[userID]={count:0,tickets:[],name:assocName};
+      tableData[teamLead].associates[userID].count++;
+      tableData[teamLead].associates[userID].tickets.push({number:ticketNum,loggedDate:row["Logged Date"]});
     });
 
     renderTable();
     updateTotals();
+    document.getElementById('copyAllBtn').style.display = 'inline-block';
   };
   reader.readAsArrayBuffer(file);
 }
 
 function renderTable() {
   if (dataTable) dataTable.destroy();
-  const tableBody = document.querySelector("#ticketTable tbody");
-  tableBody.innerHTML = "";
-
-  Object.keys(tableData).forEach(teamLead => {
-    const aging = tableData[teamLead].aging;
+  const tbody = document.querySelector("#ticketTable tbody");
+  tbody.innerHTML = "";
+  Object.keys(tableData).forEach(lead=>{
+    const a=tableData[lead].aging;
     const row = `<tr>
       <td class="details-control"></td>
-      <td>${teamLead}</td>
-      <td>${tableData[teamLead].total}</td>
-      <td>${aging["<1"]}</td>
-      <td>${aging["1-2"]}</td>
-      <td>${aging["2-3"]}</td>
-      <td>${aging["3-4"]}</td>
-      <td>${aging["4-5"]}</td>
-      <td>${aging[">5"]}</td>
+      <td>${lead}</td>
+      <td>${tableData[lead].total}</td>
+      <td class='age-cell' data-lead='${lead}' data-range='<1'>${a["<1"]}</td>
+      <td class='age-cell' data-lead='${lead}' data-range='1-2'>${a["1-2"]}</td>
+      <td class='age-cell' data-lead='${lead}' data-range='2-3'>${a["2-3"]}</td>
+      <td class='age-cell' data-lead='${lead}' data-range='3-4'>${a["3-4"]}</td>
+      <td class='age-cell' data-lead='${lead}' data-range='4-5'>${a["4-5"]}</td>
+      <td class='age-cell' data-lead='${lead}' data-range='>5'>${a[">5"]}</td>
     </tr>`;
-    tableBody.innerHTML += row;
+    tbody.innerHTML += row;
   });
 
-  dataTable = $('#ticketTable').DataTable({ order: [[2, "desc"]], deferRender: true });
+  dataTable = $('#ticketTable').DataTable({ order:[[2,"desc"]], deferRender:true });
 
-  $('#ticketTable tbody').off('click', 'td.details-control').on('click', 'td.details-control', function () {
-    const tr = $(this).closest('tr');
-    const row = dataTable.row(tr);
-
-    if (row.child.isShown()) {
-      row.child.hide();
-      tr.removeClass('shown');
-    } else {
-      dataTable.rows().every(function() {
-        if (this.node() !== tr[0] && this.child.isShown()) this.child.hide();
-        $(this.node()).removeClass('shown');
-      });
-
-      row.child(formatTeamLead(tableData[row.data()[1]])).show();
-      tr.addClass('shown');
-
-      tr.next('tr').find('td.user-details-control').off('click').on('click', function () {
-        const assocRow = $(this).closest('tr');
-        const leadName = row.data()[1];
-        const userID = Object.keys(tableData[leadName].associates)
-                          .find(k => tableData[leadName].associates[k].name === assocRow.find('td:nth-child(2)').text());
-        const userData = tableData[leadName].associates[userID];
-
-        if (assocRow.hasClass('shown-user')) {
-          assocRow.next('tr').remove();
-          assocRow.removeClass('shown-user');
-        } else {
-          const ticketHtml = '<tr><td colspan="9">'+formatUser(userData)+'</td></tr>';
-          assocRow.after(ticketHtml);
-          assocRow.addClass('shown-user');
+  $('#ticketTable tbody').off('click','td.details-control').on('click','td.details-control', function(){
+    const tr=$(this).closest('tr');
+    const row=dataTable.row(tr);
+    const lead=row.data()[1];
+    if(row.child.isShown()){ row.child.hide(); tr.removeClass('shown'); }
+    else{
+      dataTable.rows().every(function(){ if(this.node()!==tr[0]&&this.child.isShown())this.child.hide(); $(this.node()).removeClass('shown');});
+      row.child(formatTeamLead(tableData[lead],lead)).show(); tr.addClass('shown');
+      tr.next('tr').find('td.user-details-control').off('click').on('click',function(){
+        const assocTr=$(this).closest('tr');
+        const assocName=assocTr.find('td:nth-child(2)').text();
+        const userID=Object.keys(tableData[lead].associates).find(k=>tableData[lead].associates[k].name===assocName);
+        const userData=tableData[lead].associates[userID];
+        if(assocTr.hasClass('shown-user')){ assocTr.next('tr').remove(); assocTr.removeClass('shown-user');}
+        else{
+          const ticketHtml=`<tr><td colspan="9">${formatUser(userData,assocName)}</td></tr>`;
+          assocTr.after(ticketHtml); assocTr.addClass('shown-user');
         }
       });
     }
   });
+
+  // Aging cell click
+  $('#ticketTable tbody').off('click','.age-cell').on('click','.age-cell', function(){
+    const lead=$(this).data('lead');
+    const range=$(this).data('range');
+    showAgingPopup(lead, range);
+  });
 }
 
-// Update totals row
-function updateTotals() {
-  const totals = { total:0, "<1":0,"1-2":0,"2-3":0,"3-4":0,"4-5":0,">5":0 };
-  Object.values(tableData).forEach(team => {
-    totals.total += team.total;
-    for (const key of ["<1","1-2","2-3","3-4","4-5",">5"]) {
-      totals[key] += team.aging[key];
-    }
+function showAgingPopup(lead, range){
+  let html=`<h3>${lead} - ${range} Days Tickets</h3>`;
+  html+='<table border="1" width="100%" cellspacing="0" cellpadding="5"><tr><th>Associate</th><th>Ticket Number</th></tr>';
+  const now=new Date();
+  Object.values(tableData[lead].associates).forEach(a=>{
+    a.tickets.forEach(t=>{
+      const loggedDate=parseExcelDate(t.loggedDate);
+      if(!loggedDate||isNaN(loggedDate))return;
+      const age=(now-loggedDate)/(1000*60*60*24);
+      if(getAgingCategory(age)===range)
+        html+=`<tr><td>${a.name}</td><td>${t.number}</td></tr>`;
+    });
   });
-  document.getElementById("totalPending").innerText = totals.total;
-  document.getElementById("total_lt1").innerText = totals["<1"];
-  document.getElementById("total_1_2").innerText = totals["1-2"];
-  document.getElementById("total_2_3").innerText = totals["2-3"];
-  document.getElementById("total_3_4").innerText = totals["3-4"];
-  document.getElementById("total_4_5").innerText = totals["4-5"];
-  document.getElementById("total_gt5").innerText = totals[">5"];
+  html+='</table>';
+  document.getElementById('popup-content').innerHTML=html;
+  document.getElementById('overlay').style.display='block';
+  document.getElementById('popup').style.display='block';
+}
+
+function closePopup(){
+  document.getElementById('popup').style.display='none';
+  document.getElementById('overlay').style.display='none';
+}
+
+function copyPopupContent(){
+  const txt=document.getElementById('popup-content').innerText;
+  navigator.clipboard.writeText(txt);
+  alert("Popup data copied!");
+}
+
+function copySection(btn){
+  const section=btn.nextElementSibling.outerHTML;
+  const tmp=document.createElement('div');
+  tmp.innerHTML=section;
+  navigator.clipboard.writeText(tmp.innerText);
+  alert("Copied successfully!");
+}
+
+function copyFullTable(){
+  const txt=document.getElementById('ticketTable').innerText;
+  navigator.clipboard.writeText(txt);
+  alert("Full dashboard copied!");
+}
+
+function updateTotals(){
+  const totals={total:0,"<1":0,"1-2":0,"2-3":0,"3-4":0,"4-5":0,">5":0};
+  Object.values(tableData).forEach(t=>{
+    totals.total+=t.total;
+    for(const k of["<1","1-2","2-3","3-4","4-5",">5"]) totals[k]+=t.aging[k];
+  });
+  document.getElementById("totalPending").innerText=totals.total;
+  document.getElementById("total_lt1").innerText=totals["<1"];
+  document.getElementById("total_1_2").innerText=totals["1-2"];
+  document.getElementById("total_2_3").innerText=totals["2-3"];
+  document.getElementById("total_3_4").innerText=totals["3-4"];
+  document.getElementById("total_4_5").innerText=totals["4-5"];
+  document.getElementById("total_gt5").innerText=totals[">5"];
 }
 </script>
 
 </body>
 </html>
-
