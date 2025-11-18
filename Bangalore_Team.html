@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Bangalore Dashboard</title>
+<!-- libs -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<style>
+ /* Page layout */
+ :root {
+   --accent: #0d6efd;
+   --muted: #6c757d;
+   --bg: #f7f9fc;
+   --card: #ffffff;
+   --success: #2ecc71;
+   --warning: #f39c12;
+   --danger: #e74c3c;
+ }
+ html,body { height:100%; margin:0; font-family: "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color:#222; }
+ .container { max-width:1200px; margin:18px auto; padding:18px; background:var(--card); border-radius:10px; box-shadow: 0 6px 18px rgba(15,15,30,0.06); }
+ h1 { margin:0 0 10px 0; color:#16325c; font-size:22px; }
+ .top-controls { display:flex; gap:10px; align-items:center; margin:12px 0 20px 0; flex-wrap:wrap; }
+ input[type=file] { padding:6px; }
+ .btn { background:var(--accent); color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; box-shadow:0 3px 8px rgba(13,110,253,0.12); }
+ .btn.gray { background:#6c757d; }
+ .btn.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+ .btn.small { padding:6px 8px; font-size:13px; border-radius:5px; }
+ .btn:active { transform: translateY(1px); }
+ .section { margin-top:20px; }
+ .section h2 { font-size:18px; color:#16325c; margin:8px 0; }
+ /* Main table styles */
+ .table-wrap { overflow:auto; border-radius:6px; border:1px solid #e7eaf0; background:white; padding:8px; }
+ table.dataTable { border-collapse:collapse !important; table-layout: fixed; width:100% !important; }
+ table.dataTable thead th { position:sticky; top:0; background: white; z-index:5; border-bottom:2px solid #e9eef7; }
+ table.dataTable tbody tr:hover { background: #f2fbff; }
+ table.dataTable tr.shown { background:#f9fff5; } /* when expanded */
+ table.dataTable th, table.dataTable td { padding:10px 8px; vertical-align:middle; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ table.dataTable tfoot td { font-weight:600; background:#f1f5fa; }
+ /* column widths */
+ #ticketTable th:nth-child(1), #ticketTable td:nth-child(1) { width:40px; min-width:40px; text-align:center; }
+ #ticketTable th:nth-child(2), #ticketTable td:nth-child(2) { width:28%; min-width:180px; text-align:left; }
+ #ticketTable th:nth-child(3), #ticketTable td:nth-child(3) { width:12%; min-width:80px; text-align:right; }
+ #ticketTable th:nth-child(4), #ticketTable td:nth-child(4),
+ #ticketTable th:nth-child(5), #ticketTable td:nth-child(5),
+ #ticketTable th:nth-child(6), #ticketTable td:nth-child(6),
+ #ticketTable th:nth-child(7), #ticketTable td:nth-child(7),
+ #ticketTable th:nth-child(8), #ticketTable td:nth-child(8),
+ #ticketTable th:nth-child(9), #ticketTable td:nth-child(9)
+ { width:10%; min-width:70px; text-align:right; }
+ /* small copy button inside details */
+ .copy-btn { background:var(--accent); color:white; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; margin-bottom:8px; display:inline-block; font-size:13px; }
+ .copy-btn.gray { background:#6c757d; }
+ /* Expand icon - colored circle */
+ .exp-icon { display:inline-block; width:14px; height:14px; border-radius:50%; background:var(--success); box-shadow:0 1px 2px rgba(0,0,0,0.12); vertical-align:middle; margin:0 6px 0 0; border:2px solid #fff; }
+ tr.expanded > td .exp-icon { background: var(--danger); }             /* team expanded */
+ tr > td .assoc-row.expanded-user .exp-icon {} /* handled below in script */
+ /* For assoc rows inside child area we will toggle class on the assoc row's element itself */
+ .assoc-expanded .exp-icon { background: var(--danger); }
+ /* small table for 0.80+ section */
+ .small-table { width:100%; border-collapse:collapse; margin-top:8px; table-layout:fixed; }
+ .small-table th, .small-table td { border-bottom:1px solid #eef2f7; padding:8px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+ .small-table tbody tr:hover { background:#fbfeff; }
+ a.ticket-link { color:var(--accent); text-decoration:none; cursor:pointer; }
+ a.ticket-link:hover { text-decoration:underline; }
+ /* popup */
+ #overlay { display:none; position:fixed; left:0; top:0; width:100%; height:100%; background: rgba(0,0,0,0.45); z-index:9998; }
+ #popup { display:none; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:9999; width:720px; max-width:95%; max-height:80vh; overflow:auto; background:white; border-radius:8px; padding:18px; box-shadow:0 10px 40px rgba(20,20,40,0.2); }
+ #popup h3 { margin:0 0 12px 0; }
+ #popup .meta { margin-bottom:12px; color:var(--muted); font-size:13px; }
+ /* responsive */
+ @media (max-width:860px){
+   #ticketTable th:nth-child(2), #ticketTable td:nth-child(2) { width:40%; }
+   #ticketTable th:nth-child(3), #ticketTable td:nth-child(3) { width:18%; }
+ }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Bangalore Dashboard</h1>
+<div class="top-controls">
+<input id="upload" type="file" accept=".xlsx" />
+<button id="copyAllBtn" class="btn small" style="display:none;">Copy Main Dashboard</button>
+<button id="copy80Btn" class="btn small" style="display:none;">Copy 0.80+ Tickets</button>
+<button id="clearBtn" class="btn gray small">Clear</button>
+</div>
+<div class="section">
+<h2>Bangalore Team Dashboard With Aging</h2>
+<div class="table-wrap">
+<table id="ticketTable" class="display" width="100%">
+<thead>
+<tr>
+<th></th>
+<th>Team Lead</th>
+<th>Total Pending</th>
+<th>&lt;1d</th>
+<th>1-2d</th>
+<th>2-3d</th>
+<th>3-4d</th>
+<th>4-5d</th>
+<th>&gt;5d</th>
+</tr>
+</thead>
+<tbody></tbody>
+<tfoot>
+<tr>
+<td></td>
+<td style="text-align:left;">Total</td>
+<td id="totalPending">0</td>
+<td id="total_lt1">0</td>
+<td id="total_1_2">0</td>
+<td id="total_2_3">0</td>
+<td id="total_3_4">0</td>
+<td id="total_4_5">0</td>
+<td id="total_gt5">0</td>
+</tr>
+</tfoot>
+</table>
+</div>
+</div>
+<div class="section" id="aging80Section">
+<h2>0.80+ Aging Days Tickets</h2>
+<div style="margin-top:8px;">
+<div style="background:white;border-radius:8px;padding:10px;border:1px solid #e9eef7;">
+<table id="aging80Table" class="small-table" width="100%">
+<thead>
+<tr>
+<th style="width:28%;">Associate Name</th>
+<th style="width:12%;">Emp ID</th>
+<th style="width:18%;">Ticket Number</th>
+<th style="width:26%;">Logged Date</th>
+<th style="width:16%;">Aging (days)</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+<!-- overlay / popup -->
+<div id="overlay"></div>
+<div id="popup">
+<div id="popup-content"></div>
+<div style="text-align:right;margin-top:12px;">
+<button id="copyPopupBtn" class="btn small">Copy</button>
+<button id="closePopupBtn" class="btn gray small">Close</button>
+</div>
+</div>
+<script>
+/* ==========================
+  State & Config
+  ========================== */
+const teamList = {
+ "Bangalore": ["2403977","2769557","2760922","2303968","2296136","2346010","2293937","2577276","2536729","2348912","2347041","2302228","2305115","2304168","2304640","2057340","2306106","2348355","1381209","1833436","2204626","2891657","2830129","2305260","2305010","2302960","2303127","1992241","2062174","2352422","2250616","2151465","2886817","1053435","2887982","2888116","2888131","2931049","2934054"]
+};
+let tableData = {};
+let dataTable = null;
+let aging80List = [];
+let ticketDetailsMap = {};
+/* ==========================
+  Utility functions
+  ========================== */
+function parseExcelDate(value) {
+ if (!value) return null;
+
+ // Case 1: Excel numeric date (as before)
+ if (typeof value === 'number') {
+   const utc_days = value - 25569;
+   const utc_value = utc_days * 86400 * 1000;
+   return new Date(utc_value);
+ }
+
+ // Case 2: String formats like "03 November 2025, 10.47AM"
+ if (typeof value === 'string') {
+   // Convert "03 November 2025, 10.47AM" → "03 November 2025 10:47 AM"
+   let formatted = value
+     .replace(',', '')               // remove comma
+     .replace(/(\d+)\.(\d+)(AM|PM)/i, '$1:$2 $3'); // change dot to colon
+
+   // Parse manually since Date.parse may fail on localized month names
+   const match = formatted.match(
+     /(\d{1,2}) (\w+) (\d{4}) (\d{1,2}):(\d{2}) ?(AM|PM)/i
+   );
+
+   if (match) {
+     const [_, day, monthStr, year, hourStr, minStr, ampm] = match;
+     const months = {
+       January: 0, February: 1, March: 2, April: 3, May: 4, June: 5,
+       July: 6, August: 7, September: 8, October: 9, November: 10, December: 11
+     };
+     let hour = parseInt(hourStr, 10);
+     const minute = parseInt(minStr, 10);
+     if (ampm.toUpperCase() === "PM" && hour < 12) hour += 12;
+     if (ampm.toUpperCase() === "AM" && hour === 12) hour = 0;
+
+     const month = months[monthStr];
+     return new Date(year, month, parseInt(day, 10), hour, minute);
+   }
+ } if (!value && value !== 0) return null;
+ if (typeof value === 'number') {
+   const utc_days = value - 25569;
+   const utc_value = utc_days * 86400 * 1000;
+   return new Date(utc_value);
+ }
+ // if already Date-ish string
+ const d = new Date(value);
+ if (!isNaN(d)) return d;
+ return null;
+}
+function getAgingCategory(days){
+ if (days < 1) return "<1";
+ if (days < 2) return "1-2";
+ if (days < 3) return "2-3";
+ if (days < 4) return "3-4";
+ if (days < 5) return "4-5";
+ return ">5";
+}
+function escapeTSVCell(txt){
+ if (txt === null || txt === undefined) return '';
+ return String(txt).replace(/\t/g,' ').replace(/\r?\n/g,' ');
+}
+function tableElementToTSV(tableEl){
+ const rows = [];
+ const hdrs = tableEl.querySelectorAll('thead tr');
+ hdrs.forEach(tr=> {
+   const cells = Array.from(tr.querySelectorAll('th,td')).map(c => escapeTSVCell(c.innerText.trim()));
+   if (cells.length) rows.push(cells.join('\t'));
+ });
+ const bodyRows = tableEl.querySelectorAll('tbody tr');
+ bodyRows.forEach(tr=> {
+   const cells = Array.from(tr.querySelectorAll('th,td')).map(c => escapeTSVCell(c.innerText.trim()));
+   if (cells.length) rows.push(cells.join('\t'));
+ });
+ const foot = tableEl.querySelectorAll('tfoot tr');
+ foot.forEach(tr=> {
+   const cells = Array.from(tr.querySelectorAll('th,td')).map(c => escapeTSVCell(c.innerText.trim()));
+   if (cells.length) rows.push(cells.join('\t'));
+ });
+ return rows.join('\n');
+}
+function showOverlay(){ document.getElementById('overlay').style.display='block'; }
+function hideOverlay(){ document.getElementById('overlay').style.display='none'; }
+/* ==========================
+  Formatters
+  ========================== */
+function formatTeamLead(teamData, leadName){
+ // contains copy button and list of associates with small exp-icon in first col
+ let html = `<button class="copy-btn" onclick="copySection(this)">Copy ${leadName} Details</button>`;
+ html += '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:10px;width:100%;">';
+ html += '<thead><tr><th style="width:40px;"></th><th>Associate</th><th>Pending Tickets</th></tr></thead><tbody>';
+ const associates = Object.entries(teamData.associates).sort((a,b)=>b[1].count - a[1].count);
+ associates.forEach(([assocID,data])=>{
+   const name = data.name || assocID;
+   // user-details-control cell includes a span.exp-icon to toggle color
+   html += `<tr class="assoc-row" data-associd="${assocID}">
+<td style="width:40px;"><span class="exp-icon"></span></td>
+<td>${name}</td>
+<td style="text-align:right;">${data.count}</td>
+</tr>`;
+ });
+ html += '</tbody></table>';
+ return html;
+}
+function formatUser(userData, assocName){
+ let html = `<button class="copy-btn" onclick="copySection(this)">Copy ${assocName} Tickets</button>`;
+ html += '<table cellpadding="5" cellspacing="0" border="0" style="padding-left:20px;width:100%;">';
+ html += '<thead><tr><th>Ticket Number</th><th>Logged Date</th><th style="text-align:right;">Age (days)</th></tr></thead><tbody>';
+ const now = new Date();
+ userData.tickets.forEach(t=>{
+   const loggedDate = parseExcelDate(t.loggedDate);
+   let ageStr = 'N/A';
+   let loggedStr = t.loggedDate;
+   if (loggedDate && !isNaN(loggedDate)){
+     const age = ((now - loggedDate)/(1000*60*60*24));
+     ageStr = age.toFixed(2);
+     loggedStr = loggedDate.toLocaleString();
+   }
+   html += `<tr><td>${t.number}</td><td>${loggedStr}</td><td style="text-align:right;">${ageStr}</td></tr>`;
+ });
+ html += '</tbody></table>';
+ return html;
+}
+/* ==========================
+  File handling & building data
+  ========================== */
+document.getElementById('upload').addEventListener('change', handleFile);
+document.getElementById('clearBtn').addEventListener('click', ()=> location.reload());
+document.getElementById('copyAllBtn').addEventListener('click', ()=>{
+ const tbl = document.getElementById('ticketTable');
+ const tsv = tableElementToTSV(tbl);
+ navigator.clipboard.writeText(tsv).then(()=> alert('Main dashboard copied (paste into Excel).')).catch(()=> alert('Copy failed.'));
+});
+document.getElementById('copy80Btn').addEventListener('click', ()=> {
+ const tbl = document.getElementById('aging80Table');
+ const tsv = tableElementToTSV(tbl);
+ navigator.clipboard.writeText(tsv).then(()=> alert('0.80+ table copied (paste into Excel).')).catch(()=> alert('Copy failed.'));
+});
+document.getElementById('closePopupBtn').addEventListener('click', ()=> { document.getElementById('popup').style.display='none'; hideOverlay(); });
+document.getElementById('copyPopupBtn').addEventListener('click', ()=> {
+ const text = document.getElementById('popup-content').innerText;
+ navigator.clipboard.writeText(text).then(()=> alert('Popup copied')).catch(()=> alert('Copy failed'));
+});
+function handleFile(e){
+ const file = e.target.files[0];
+ if (!file) return;
+ const reader = new FileReader();
+ reader.onload = function(ev){
+   const data = new Uint8Array(ev.target.result);
+   const workbook = XLSX.read(data, { type:'array' });
+   const sheet = workbook.Sheets[workbook.SheetNames[0]];
+   const json = XLSX.utils.sheet_to_json(sheet, { defval: null });
+   tableData = {};
+   aging80List = [];
+   ticketDetailsMap = {};
+   const now = new Date();
+   json.forEach(row => {
+     const userID = row["SP Userid"] ? String(row["SP Userid"]).trim() : (row["Emp ID"] ? String(row["Emp ID"]).trim() : null);
+     const assocName = row["SP Username"] || row["SP User"] || row["Associate"] || row["Associate Name"] || '';
+     const ticketNum = row["Ticket Number"] || row["Ticket"] || row["TicketNo"] || row["TicketNumber"];
+     const loggedRaw = row["Logged Date"] || row["LoggedDate"] || row["Logged On"] || row["Created"];
+     const description = row["Description"] || '';
+     const status = row["Status"] || '';
+     const loggedDate = parseExcelDate(loggedRaw);
+     if (!ticketNum || !userID) return;
+     // find lead
+     let teamLead = null;
+     for (const [lead, members] of Object.entries(teamList)) {
+       if (members.includes(userID)) { teamLead = lead; break; }
+     }
+     if (!teamLead) return;
+     if (!tableData[teamLead]) tableData[teamLead] = { total:0, associates:{}, aging:{"<1":0,"1-2":0,"2-3":0,"3-4":0,"4-5":0,">5":0} };
+     tableData[teamLead].total++;
+     let ageDays = null;
+     if (loggedDate && !isNaN(loggedDate)) {
+       ageDays = (now - loggedDate)/(1000*60*60*24);
+       const cat = getAgingCategory(ageDays);
+       tableData[teamLead].aging[cat] ++;
+     }
+     if (!tableData[teamLead].associates[userID]) tableData[teamLead].associates[userID] = { count:0, tickets: [], name: assocName || userID };
+     tableData[teamLead].associates[userID].count ++;
+     tableData[teamLead].associates[userID].tickets.push({ number: ticketNum, loggedDate: loggedRaw });
+     // ticket details map
+     ticketDetailsMap[String(ticketNum)] = {
+       description: description,
+       status: status,
+       assocName: assocName || userID,
+       empId: userID,
+       loggedDate: (loggedDate && !isNaN(loggedDate)) ? loggedDate : null,
+       ageDays: (ageDays !== null) ? ageDays : null
+     };
+     // collect aging >= 0.80
+     if (ageDays !== null && ageDays >= 0.80) {
+       aging80List.push({
+         assocName: assocName || userID,
+         empId: userID,
+         ticket: ticketNum,
+         loggedDate: (loggedDate && !isNaN(loggedDate)) ? loggedDate.toLocaleString() : (loggedRaw || ''),
+         age: (ageDays !== null) ? ageDays.toFixed(2) : ''
+       });
+     }
+   });
+   renderTable();
+   renderAging80Table();
+   updateTotals();
+   document.getElementById('copyAllBtn').style.display = 'inline-block';
+   document.getElementById('copy80Btn').style.display = aging80List.length ? 'inline-block' : 'none';
+ };
+ reader.readAsArrayBuffer(file);
+}
+/* ==========================
+  Render main table
+  ========================== */
+function renderTable(){
+ if (dataTable) dataTable.destroy();
+ const tbody = document.querySelector('#ticketTable tbody');
+ tbody.innerHTML = '';
+ Object.keys(tableData).forEach(lead => {
+   const a = tableData[lead].aging;
+   const tr = document.createElement('tr');
+   tr.innerHTML = `
+<td style="text-align:center;"><span class="exp-icon"></span></td>
+<td>${lead}</td>
+<td style="text-align:right;">${tableData[lead].total}</td>
+<td class='age-cell' data-lead='${lead}' data-range='<1' style="text-align:right;">${a["<1"]}</td>
+<td class='age-cell' data-lead='${lead}' data-range='1-2' style="text-align:right;">${a["1-2"]}</td>
+<td class='age-cell' data-lead='${lead}' data-range='2-3' style="text-align:right;">${a["2-3"]}</td>
+<td class='age-cell' data-lead='${lead}' data-range='3-4' style="text-align:right;">${a["3-4"]}</td>
+<td class='age-cell' data-lead='${lead}' data-range='4-5' style="text-align:right;">${a["4-5"]}</td>
+<td class='age-cell' data-lead='${lead}' data-range='>5' style="text-align:right;">${a[">5"]}</td>
+   `;
+   tbody.appendChild(tr);
+ });
+ // create DataTable without search or pagination; ensure autoWidth false to respect our widths
+ dataTable = $('#ticketTable').DataTable({
+   order: [[2, 'desc']],
+   deferRender: true,
+   paging: false,
+   info: false,
+   searching: false,
+   autoWidth: false,
+   dom: 't'
+ });
+ // team expand/collapse
+ $('#ticketTable tbody').off('click').on('click','td:first-child', function(){
+   const tr = $(this).closest('tr');
+   const row = dataTable.row(tr);
+   const lead = row.data()[1];
+   if (row.child.isShown()){
+     // hide
+     row.child.hide();
+     tr.removeClass('expanded');
+     // reset icon color to green (CSS handles)
+   } else {
+     // hide the other open child rows first
+     dataTable.rows().every(function(){
+       if (this.child.isShown() && this.node() !== tr[0]) {
+         $(this.node()).removeClass('expanded');
+         this.child.hide();
+       }
+     });
+     // show child
+     row.child(formatTeamLead(tableData[lead], lead)).show();
+     tr.addClass('expanded');
+     // scroll into view
+     setTimeout(()=> {
+       const el = tr.next('tr')[0];
+       if (el) el.scrollIntoView({ behavior:'smooth', block:'center' });
+     }, 120);
+     // attach handler for assoc rows inside child content
+     const childRow = tr.next('tr');
+     childRow.find('tr.assoc-row').each(function(){
+       // ensure first cell contains exp-icon already via HTML
+     });
+     // on click assoc-row toggle details
+     childRow.find('tr.assoc-row').off('click').on('click', function(){
+       const assocTr = $(this);
+       const assocId = assocTr.attr('data-associd');
+       const assocName = assocTr.find('td:nth-child(2)').text();
+       const leadName = lead;
+       // find user id in tableData mapping by assoc name or assocId
+       let userID = assocId;
+       const userData = tableData[leadName].associates[userID];
+       if (!userData){
+         // try matching by name
+         userID = Object.keys(tableData[leadName].associates).find(k => tableData[leadName].associates[k].name === assocName);
+       }
+       if (!userID) return;
+       const dataObj = tableData[leadName].associates[userID];
+       if (assocTr.hasClass('assoc-expanded')){
+         // collapse
+         assocTr.removeClass('assoc-expanded');
+         assocTr.next('tr.assoc-details').remove();
+       } else {
+         // close any other assoc details in same child
+         childRow.find('tr.assoc-details').remove();
+         childRow.find('tr.assoc-expanded').removeClass('assoc-expanded');
+         const html = `<tr class="assoc-details"><td colspan="9">${formatUser(dataObj, assocName)}</td></tr>`;
+         assocTr.after(html);
+         assocTr.addClass('assoc-expanded');
+         // scroll to details
+         setTimeout(()=> {
+           const newEl = assocTr.next('tr.assoc-details')[0];
+           if (newEl) newEl.scrollIntoView({ behavior:'smooth', block:'center' });
+         }, 90);
+       }
+     });
+   }
+ });
+ // aging cell -> popup
+ $('#ticketTable tbody').on('click', 'td.age-cell', function(){
+   const lead = $(this).data('lead');
+   const range = $(this).data('range');
+   showAgingPopup(lead, range);
+ });
+}
+/* ==========================
+  Aging popup by range
+  ========================== */
+function showAgingPopup(lead, range){
+ let html = `<h3>${lead} - ${range} Days Tickets</h3>`;
+ html += '<div class="meta">Click Copy to copy this list</div>';
+ html += '<table style="width:100%;border-collapse:collapse;"><thead><tr><th style="text-align:left;padding:6px;">Associate</th><th style="text-align:left;padding:6px;">Ticket</th><th style="text-align:left;padding:6px;">Logged</th><th style="text-align:right;padding:6px;">Age</th></tr></thead><tbody>';
+ const now = new Date();
+ Object.values(tableData[lead].associates).forEach(a=>{
+   a.tickets.forEach(t=>{
+     const loggedDate = parseExcelDate(t.loggedDate);
+     if (!loggedDate || isNaN(loggedDate)) return;
+     const age = (now - loggedDate)/(1000*60*60*24);
+     if (getAgingCategory(age) === range) {
+       html += `<tr><td style="padding:6px;">${a.name}</td><td style="padding:6px;">${t.number}</td><td style="padding:6px;">${loggedDate.toLocaleString()}</td><td style="padding:6px;text-align:right;">${age.toFixed(2)}</td></tr>`;
+     }
+   });
+ });
+ html += '</tbody></table>';
+ document.getElementById('popup-content').innerHTML = html;
+ document.getElementById('popup').style.display = 'block';
+ showOverlay();
+}
+/* ==========================
+  Render 0.80+ table and ticket popup
+  ========================== */
+function renderAging80Table(){
+ const tbody = document.querySelector('#aging80Table tbody');
+ tbody.innerHTML = '';
+ if (!aging80List.length) {
+   tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:14px;color:#666">No tickets with age >= 0.80 days</td></tr>';
+   document.getElementById('copy80Btn').style.display = 'none';
+   return;
+ }
+ // sort descending by age
+ aging80List.sort((a,b) => parseFloat(b.age) - parseFloat(a.age));
+ aging80List.forEach(item => {
+   const tr = document.createElement('tr');
+   tr.innerHTML = `<td>${item.assocName}</td>
+<td>${item.empId}</td>
+<td><a href="#" class="ticket-link" data-ticket="${String(item.ticket)}">${item.ticket}</a></td>
+<td>${item.loggedDate}</td>
+<td style="text-align:right;">${item.age}</td>`;
+   tbody.appendChild(tr);
+ });
+ // ticket link click handler - delegated
+ document.querySelector('#aging80Table tbody').addEventListener('click', function(ev){
+   const el = ev.target;
+   if (el && el.classList && el.classList.contains('ticket-link')){
+     ev.preventDefault();
+     const ticket = el.getAttribute('data-ticket');
+     showTicketPopup(ticket);
+   }
+ });
+}
+/* ticket popup */
+function showTicketPopup(ticketNumber){
+ const key = String(ticketNumber);
+ const info = ticketDetailsMap[key] || null;
+ let html = `<h3>Ticket: ${escapeHtml(ticketNumber)}</h3>`;
+ if (!info) {
+   html += '<div class="meta">No ticket metadata available (maybe missing in source sheet or filtered out).</div>';
+ } else {
+   const ld = (info.loggedDate && info.loggedDate.toLocaleString) ? info.loggedDate.toLocaleString() : (info.loggedDate || '');
+   html += `<div class="meta">Associate: ${escapeHtml(info.assocName)} &nbsp;&nbsp; | &nbsp;&nbsp; Emp ID: ${escapeHtml(info.empId)}</div>`;
+   html += `<table style="width:100%;"><tr><td style="font-weight:600;width:120px;padding:6px;vertical-align:top;">Status</td><td style="padding:6px;">${escapeHtml(info.status || '')}</td></tr>`;
+   html += `<tr><td style="font-weight:600;width:120px;padding:6px;vertical-align:top;">Logged</td><td style="padding:6px;">${escapeHtml(ld)}</td></tr>`;
+   html += `<tr><td style="font-weight:600;vertical-align:top;padding:6px;">Aging (days)</td><td style="padding:6px;">${info.ageDays !== null ? info.ageDays.toFixed(2) : 'N/A'}</td></tr>`;
+   html += `<tr><td style="font-weight:600;vertical-align:top;padding:6px;">Description</td><td style="padding:6px;">${escapeHtml(info.description || '')}</td></tr></table>`;
+ }
+ document.getElementById('popup-content').innerHTML = html;
+ document.getElementById('popup').style.display = 'block';
+ showOverlay();
+}
+/* ==========================
+  Copy helpers / copy section
+  ========================== */
+function copySection(btn){
+ // try to find the next table sibling inside the same parent
+ let el = btn.parentElement;
+ // find first table inside this parent
+ const table = el.querySelector('table');
+ if (!table) {
+   // fallback: copy text
+   const txt = el.innerText;
+   navigator.clipboard.writeText(txt).then(()=> alert('Copied')).catch(()=> alert('Copy failed'));
+   return;
+ }
+ const tsv = tableElementToTSV(table);
+ navigator.clipboard.writeText(tsv).then(()=> alert('Section copied (paste into Excel).')).catch(()=> alert('Copy failed'));
+}
+/* ==========================
+  Helpers & misc
+  ========================== */
+function updateTotals(){
+ const totals = { total:0, "<1":0, "1-2":0, "2-3":0, "3-4":0, "4-5":0, ">5":0 };
+ Object.values(tableData).forEach(t=>{
+   totals.total += t.total;
+   for (const k of ["<1","1-2","2-3","3-4","4-5",">5"]) totals[k] += (t.aging[k] || 0);
+ });
+ document.getElementById('totalPending').innerText = totals.total;
+ document.getElementById('total_lt1').innerText = totals["<1"];
+ document.getElementById('total_1_2').innerText = totals["1-2"];
+ document.getElementById('total_2_3').innerText = totals["2-3"];
+ document.getElementById('total_3_4').innerText = totals["3-4"];
+ document.getElementById('total_4_5').innerText = totals["4-5"];
+ document.getElementById('total_gt5').innerText = totals[">5"];
+}
+function escapeHtml(s){
+ if (s === null || s === undefined) return '';
+ return String(s).replace(/[&<>"']/g, function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]; });
+}
+/* ==========================
+  Initialization: hide overlay on click
+  ========================== */
+document.getElementById('overlay').addEventListener('click', ()=>{
+ document.getElementById('popup').style.display = 'none';
+ hideOverlay();
+});
+</script>
+</body>
+</html>
