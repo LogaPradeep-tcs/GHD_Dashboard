@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>GHD Automation Status Tracker</title>
+<style>
+   /* ---------- Basic layout ---------- */
+   :root{
+       --brand:#0d47a1;
+       --bg:#eef2f7;
+       --card:#ffffff;
+       --muted:#6b7280;
+   }
+   *{box-sizing:border-box}
+   body{
+       margin:0;
+       font-family:Inter, "Segoe UI", Roboto, Arial, sans-serif;
+       background:var(--bg);
+       color:#111827;
+       -webkit-font-smoothing:antialiased;
+       -moz-osx-font-smoothing:grayscale;
+   }
+   /* ---------- Loader ---------- */
+   #loader{
+       position:fixed;
+       inset:0;
+       display:flex;
+       align-items:center;
+       justify-content:center;
+       background:var(--brand);
+       color:#fff;
+       font-weight:600;
+       font-size:20px;
+       z-index:9999;
+   }
+   /* ---------- Container ---------- */
+   .wrap{
+       max-width:1100px;
+       margin:30px auto;
+       padding:18px;
+   }
+   header{
+       display:flex;
+       align-items:center;
+       justify-content:space-between;
+       gap:12px;
+       margin-bottom:18px;
+   }
+   h1{
+       margin:0;
+       color:var(--brand);
+       font-size:20px;
+   }
+   .sub{
+       color:var(--muted);
+       font-size:13px;
+   }
+   /* ---------- Controls ---------- */
+   .controls{
+       display:flex;
+       gap:10px;
+       flex-wrap:wrap;
+       align-items:center;
+   }
+   .controls input[type="text"],
+   .controls select{
+       padding:10px 12px;
+       border-radius:8px;
+       border:1px solid #d1d5db;
+       font-size:14px;
+       min-width:160px;
+   }
+   .controls .small{
+       padding:8px 10px;
+       font-size:13px;
+   }
+   /* ---------- Table ---------- */
+   .card{
+       background:var(--card);
+       border-radius:10px;
+       box-shadow:0 6px 18px rgba(13,71,161,0.06);
+       padding:8px;
+       overflow:auto;
+   }
+   table{
+       width:100%;
+       border-collapse:collapse;
+       min-width:900px;
+   }
+   thead th{
+       background:var(--brand);
+       color:#fff;
+       font-weight:600;
+       text-align:center;
+       padding:10px 12px;
+       position:sticky;
+       top:0;
+       z-index:2;
+       cursor:pointer;
+       user-select:none;
+   }
+   tbody td{
+       padding:12px;
+       border-bottom:1px solid #eff2f7;
+       text-align:center;
+       vertical-align:middle;
+       font-size:14px;
+   }
+   tbody tr:hover{ background:#fafbff; }
+   .link{
+       color:var(--brand);
+       text-decoration:underline;
+       cursor:pointer;
+       font-weight:600;
+   }
+   .status-chip{
+       display:inline-block;
+       padding:6px 10px;
+       border-radius:999px;
+       font-size:13px;
+       font-weight:600;
+       color:#fff;
+   }
+   .status-completed{ background: #10b981; } /* green */
+   .status-pending{ background: #f59e0b; }  /* amber */
+   /* ---------- Modal ---------- */
+   .modal-bg{
+       position:fixed;
+       inset:0;
+       display:none;
+       align-items:center;
+       justify-content:center;
+       background:rgba(0,0,0,0.45);
+       z-index:9998;
+       padding:20px;
+   }
+   .modal{
+       background:#fff;
+       width:100%;
+       max-width:560px;
+       border-radius:10px;
+       padding:18px;
+       box-shadow:0 10px 40px rgba(2,6,23,0.2);
+   }
+   .modal h3{
+       margin:0 0 8px 0;
+       color:var(--brand);
+       font-size:18px;
+   }
+   .modal .row{
+       display:flex;
+       gap:12px;
+       margin:8px 0;
+       flex-wrap:wrap;
+   }
+   .modal .col{
+       flex:1 1 200px;
+       min-width:180px;
+   }
+   .label{ color:var(--muted); font-size:13px; margin-bottom:6px; display:block; }
+   .value{ font-weight:600; font-size:14px; color:#111827; }
+   .context-box{
+       background:#f8fafc;
+       border:1px solid #e6eef9;
+       padding:12px;
+       border-radius:8px;
+       font-size:14px;
+       color:#111827;
+       line-height:1.35;
+   }
+   .close-btn{
+       margin-top:14px;
+       background:var(--brand);
+       color:#fff;
+       padding:10px 12px;
+       border-radius:8px;
+       border:0;
+       cursor:pointer;
+       font-weight:700;
+   }
+   /* ---------- Footer ---------- */
+   footer{
+       text-align:center;
+       margin-top:16px;
+       color:var(--muted);
+       font-size:13px;
+   }
+   /* Responsive */
+   @media (max-width:720px){
+       thead th{ font-size:13px; padding:10px 6px; }
+       tbody td{ font-size:13px; padding:10px 6px; }
+       header{ flex-direction:column; align-items:flex-start; gap:8px; }
+       .controls{ width:100%; }
+   }
+</style>
+</head>
+<body>
+<!-- Loader -->
+<div id="loader">GHD automation status tracker is loading...</div>
+<div class="wrap" id="app" style="display:none;">
+<header>
+<div>
+<h1>GHD Automation Status Tracker</h1>
+<div class="sub">Overview of automations — click the automation name for full details</div>
+</div>
+<div class="controls" aria-hidden="false">
+<input type="text" id="searchBox" placeholder="Search by name / spoc / idea / status..." oninput="applyFilters()" />
+<select id="filterStatus" onchange="applyFilters()" class="small">
+<option value="All">All Tasks</option>
+<option value="Completed">Completed</option>
+<option value="Pending">Pending</option>
+</select>
+<select id="rowsPerPage" onchange="applyFilters()" class="small" title="Rows per page">
+<option value="10">10 rows</option>
+<option value="25">25 rows</option>
+<option value="50">50 rows</option>
+</select>
+</div>
+</header>
+<section class="card" aria-live="polite">
+<table role="table" id="taskTable">
+<thead>
+<tr>
+<th onclick="sortTable('name')">Automation Name ⬍</th>
+<th onclick="sortTable('spoc')">GHD SPOC ⬍</th>
+<th onclick="sortTable('ideaBy')">Automation Idea Given By ⬍</th>
+<th onclick="sortTable('status')">Status ⬍</th>
+<th onclick="sortTable('start')">Start Date ⬍</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
+</section>
+<footer>If any Query, connect with <strong>DigitalIS.GHDAutomationSPOC@tcs.com</strong></footer>
+</div>
+<!-- Modal (details) -->
+<div class="modal-bg" id="modalBg" role="dialog" aria-modal="true" aria-hidden="true">
+<div class="modal" role="document">
+<h3 id="modalTitle">Automation</h3>
+<div class="row">
+<div class="col">
+<div class="label">Vertical SPOC</div>
+<div class="value" id="mSpoc">-</div>
+</div>
+<div class="col">
+<div class="label">Start Date</div>
+<div class="value" id="mStart">-</div>
+</div>
+<div class="col">
+<div class="label">End Date</div>
+<div class="value" id="mEnd">-</div>
+</div>
+</div>
+<div class="row">
+<div class="col">
+<div class="label">Automation Idea Given By (Initiated By)</div>
+<div class="value" id="mIdea">-</div>
+</div>
+</div>
+<div style="margin-top:10px;">
+<div class="label">Context of this Automation and the status</div>
+<div class="context-box" id="mContext">-</div>
+</div>
+<button class="close-btn" onclick="closeModal()">Close</button>
+</div>
+</div>
+<script>
+/* ============================
+  DATA: tasks (editable area)
+  - Each task has a unique id (do not remove)
+  - To add tasks: add a new object here
+  ============================ */
+let tasks = [
+   {
+       id: "T001",
+       name: "Automation – Azure MFA",
+       spoc: "GHD Automation Team",
+       ideaBy: "GHD Team",
+       status: "Completed",
+       start: "2025-01-05",
+       end: "2025-01-12",
+       context: "Used to Update/Remove the Authentication Methods like Contact Number or MFA Authenticator app."
+   },
+   {
+       id: "T002",
+       name: "Automation – Jile.io Via GHD",
+       spoc: "GHD Automation Team",
+       ideaBy: "Loga",
+       status: "Pending",
+       start: "2025-01-10",
+       end: "2025-01-20",
+       context: "To Craete all Work items like Features, Stories and task via GHD RFC"
+   },
+   {
+       id: "T003",
+       name: "Automation – GWS - MFA",
+       spoc: "GHD Automation Team",
+       ideaBy: "GHD Team",
+       status: "Completed",
+       start: "2025-01-08",
+       end: "2025-01-15",
+       context: "Used to Remove the Authentication Methods like Contact Number in GWS Platform."
+   },
+   {
+       id: "T004",
+       name: "Automation – MS Teams Installation",
+       spoc: "GHD Automation Team",
+       ideaBy: "Prathamesh/Akash",
+       status: "Pending",
+       start: "2025-01-12",
+       end: "2025-01-22",
+       context: "To install teams via Intune using IGNIO API for both Fresh and used machines."
+   },
+
+
+   {
+       id: "T005",
+       name: "Automation – Duplicate ticket detection for common issue",
+       spoc: "GHD Automation Team",
+       ideaBy: "Sai Singh",
+       status: "Pending",
+       start: "2025-01-06",
+       end: "2025-01-18",
+       context: "Automation Idea on automatically identify and handle duplicate tickets raised for the same issue (by same or multiple users)"
+   }
+];
+/* ============================
+  State variables
+  ============================ */
+let currentSortKey = null;
+let sortDirection = 1; // 1 ascending, -1 descending
+/* ---------- Helper: format status chip ---------- */
+function statusChip(status){
+   let cls = status.toLowerCase() === "completed" ? "status-completed" : "status-pending";
+   return `<span class="status-chip ${cls}">${escapeHtml(status)}</span>`;
+}
+/* ---------- Escape small helper ---------- */
+function escapeHtml(s){
+   if(s === undefined || s === null) return "";
+   return String(s)
+       .replaceAll('&', '&amp;')
+       .replaceAll('<', '&lt;')
+       .replaceAll('>', '&gt;');
+}
+/* ---------- Render table rows based on filters ---------- */
+function loadTable(filtered){
+   const tbody = document.getElementById("tbody");
+   tbody.innerHTML = "";
+   if(!filtered || filtered.length === 0){
+       tbody.innerHTML = `<tr><td colspan="5" style="padding:18px; color:${'#6b7280'}; text-align:center">No tasks found.</td></tr>`;
+       return;
+   }
+   filtered.forEach(task => {
+       const row = document.createElement("tr");
+       row.innerHTML = `
+<td><span class="link" role="button" tabindex="0" onclick="openModal('${task.id}')">${escapeHtml(task.name)}</span></td>
+<td>${escapeHtml(task.spoc)}</td>
+<td>${escapeHtml(task.ideaBy)}</td>
+<td>${statusChip(task.status)}</td>
+<td>${escapeHtml(task.start)}</td>
+       `;
+       tbody.appendChild(row);
+   });
+}
+/* ---------- Apply search + filter + pagination (basic) ---------- */
+function applyFilters(){
+   const search = document.getElementById("searchBox").value.trim().toLowerCase();
+   const filterStatus = document.getElementById("filterStatus").value;
+   const rowsPerPage = parseInt(document.getElementById("rowsPerPage").value, 10) || 10;
+   let filtered = tasks.filter(t => {
+       // search across name, spoc, ideaBy, status, context
+       const hay = (t.name + " " + t.spoc + " " + t.ideaBy + " " + t.status + " " + (t.context || "")).toLowerCase();
+       const matchSearch = hay.indexOf(search) !== -1;
+       const matchStatus = (filterStatus === "All") ? true : (t.status === filterStatus);
+       return matchSearch && matchStatus;
+   });
+   // Apply sort if any
+   if(currentSortKey){
+       filtered.sort((a,b) => {
+           const A = (a[currentSortKey] || "").toString().toLowerCase();
+           const B = (b[currentSortKey] || "").toString().toLowerCase();
+           if(A === B) return 0;
+           return A > B ? sortDirection : -sortDirection;
+       });
+   }
+   // Simple rowsPerPage: slice
+   filtered = filtered.slice(0, rowsPerPage);
+   loadTable(filtered);
+}
+/* ---------- Sorting ---------- */
+function sortTable(key){
+   if(currentSortKey === key){
+       sortDirection = -sortDirection;
+   } else {
+       currentSortKey = key;
+       sortDirection = 1;
+   }
+   applyFilters();
+}
+/* ---------- Modal handlers ---------- */
+function openModal(id){
+   const task = tasks.find(t => t.id === id);
+   if(!task) return;
+   document.getElementById("modalTitle").innerText = task.name || "-";
+   document.getElementById("mSpoc").innerText = task.spoc || "-";
+   document.getElementById("mStart").innerText = task.start || "-";
+   document.getElementById("mEnd").innerText = task.end || "-";
+   // Show both labels as requested: "Automation Idea Given By (Initiated By)"
+   document.getElementById("mIdea").innerText = task.ideaBy || "-";
+   document.getElementById("mContext").innerText = task.context || "-";
+   const modalBg = document.getElementById("modalBg");
+   modalBg.style.display = "flex";
+   modalBg.setAttribute("aria-hidden","false");
+   // focus close button for accessibility
+   setTimeout(() => {
+       modalBg.querySelector(".close-btn").focus();
+   }, 80);
+}
+function closeModal(){
+   const modalBg = document.getElementById("modalBg");
+   modalBg.style.display = "none";
+   modalBg.setAttribute("aria-hidden","true");
+}
+/* ---------- Init: show loader 2s then show app ---------- */
+window.addEventListener("DOMContentLoaded", () => {
+   setTimeout(() => {
+       document.getElementById("loader").style.display = "none";
+       document.getElementById("app").style.display = "block";
+       applyFilters();
+   }, 2000);
+});
+/* ---------- Keyboard: allow Enter to open modal on focused link ---------- */
+document.addEventListener("keydown", (e) => {
+   if(e.key === "Escape") closeModal();
+});
+</script>
+</body>
+</html>
